@@ -18,9 +18,9 @@ type Manga struct {
 	Updated         time.Time `json:"updated_at"`
 }
 
-// MangaSingle contains a manga with additional fields. This struct is
+// SingleManga contains a manga with additional fields. This struct is
 // returned by requests for a single manga.
-type MangaSingle struct {
+type SingleManga struct {
 	Manga
 	Description string     `json:"description"`
 	Chapters    []Chapter  `json:"chapters"`

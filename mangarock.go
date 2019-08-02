@@ -2,7 +2,6 @@ package mangarock
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/url"
 
@@ -24,13 +23,13 @@ type Client struct {
 	options map[string]string
 }
 
-// response is the response of the mangarock web api
-type response struct {
+// Response is the response of the mangarock web api
+type Response struct {
 	Code int             `json:"code"`
 	Data json.RawMessage `json:"data"`
 }
 
-// WithOptions ...
+// WithOptions allow creating client with additional options. IE: country
 func WithOptions(options map[string]string) func(*Client) {
 	return func(mangarock *Client) {
 		mangarock.options = options
@@ -49,59 +48,6 @@ func New(options ...func(*Client)) *Client {
 	}
 
 	return mangarockClient
-}
-
-func (c *Client) post(url string, body interface{}) (json.RawMessage, error) {
-	pr, pw := io.Pipe()
-	go func() {
-		defer pw.Close()
-		json.NewEncoder(pw).Encode(body)
-	}()
-
-	req, err := http.NewRequest(http.MethodPost, url, pr)
-	if err != nil {
-		return nil, errors.Wrap(err, "Could not create Post request.")
-	}
-
-	res, err := c.client.Do(req)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Could not post to %v .", url)
-	}
-	defer res.Body.Close()
-
-	var resp response
-	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
-		return nil, errors.Wrap(err, "Could not decode response.")
-	}
-	if resp.Code != 0 {
-		return nil, errors.Errorf("Response code %d", resp.Code)
-	}
-
-	return resp.Data, nil
-}
-
-func (c *Client) get(url string, query url.Values) (json.RawMessage, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "Could not create the GET request.")
-	}
-
-	req.URL.RawQuery = query.Encode()
-	res, err := c.client.Do(req)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Could not GET %v", url)
-	}
-	defer res.Body.Close()
-
-	var resp response
-	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
-		return nil, errors.Wrap(err, "Could not decode response")
-	}
-	if resp.Code != 0 {
-		return nil, errors.Errorf("Response code %d", resp.Code)
-	}
-
-	return resp.Data, nil
 }
 
 // Latest returns the latest mangas. It only uses the manga IDs and requests a
@@ -128,86 +74,17 @@ func (c *Client) Latest(page int) ([]Manga, error) {
 }
 
 // Manga returns a single manga. It may contain more fields than a regular one.
-func (c *Client) Manga(id string) (MangaSingle, error) {
+func (c *Client) Manga(id string) (SingleManga, error) {
 	res, err := c.post(c.base+"/info?oid="+id, nil)
 	if err != nil {
-		return MangaSingle{}, err
+		return SingleManga{}, err
 	}
-	var manga MangaSingle
+	var manga SingleManga
 	if err := json.Unmarshal(res, &manga); err != nil {
-		return MangaSingle{}, errors.Wrap(err, "Could not unmarshal manga")
+		return SingleManga{}, errors.Wrap(err, "Could not unmarshal manga")
 	}
 	manga.Author = manga.Authors[0]
 	return manga, nil
-}
-
-// NOTE: From below was taken from bake's mangarock api.
-// I'll change the implementation, so instead of using it as a dependency
-// I chose re-inventing the wheel.
-
-// mangasByIDs returns a list of mangas based on IDs. Can be used to unify
-// manga results that are slightly different.
-func (c *Client) mangasByIDs(ids []string) ([]Manga, error) {
-	res, err := c.post(APIMETAURL, ids)
-	if err != nil {
-		return nil, errors.Wrap(err, "Could not get meta data by manga ids")
-	}
-	var mangaMap map[string]Manga
-	if err := json.Unmarshal(res, &mangaMap); err != nil {
-		return nil, errors.Wrap(err, "Could not unmarshal mangas by ids")
-	}
-	var mangas []Manga
-	for _, id := range ids {
-		if manga, ok := mangaMap[id]; ok {
-			mangas = append(mangas, manga)
-		}
-	}
-	return mangas, nil
-}
-
-// addAuthors adds authors to mangas based on their IDs.
-func (c *Client) addAuthors(mangas []Manga) ([]Manga, error) {
-	var ids []string
-	for _, manga := range mangas {
-		ids = append(ids, manga.AuthorIDs...)
-	}
-	authors, err := c.authorsByIDs(ids)
-	if err != nil {
-		return nil, errors.Wrap(err, "Could not get authors by ids")
-	}
-	authorMap := map[string]Author{}
-	for _, author := range authors {
-		authorMap[author.ID] = author
-	}
-
-	for i, manga := range mangas {
-		for _, id := range manga.AuthorIDs {
-			mangas[i].Authors = append(mangas[i].Authors, authorMap[id])
-		}
-		if len(mangas[i].Authors) == 0 {
-			continue
-		}
-		mangas[i].Author = mangas[i].Authors[0]
-	}
-
-	return mangas, nil
-}
-
-// authorsByIDs returns a slice of authors by their IDs.
-func (c *Client) authorsByIDs(ids []string) ([]Author, error) {
-	res, err := c.post(APIMETAURL, ids)
-	if err != nil {
-		return nil, errors.Wrap(err, "Could not get meta data by author ids")
-	}
-	var authorMap map[string]Author
-	if err := json.Unmarshal(res, &authorMap); err != nil {
-		return nil, errors.Wrap(err, "Could not unmarshal authors by ids")
-	}
-	var authors []Author
-	for _, author := range authorMap {
-		authors = append(authors, author)
-	}
-	return authors, nil
 }
 
 // Mangas returns a slice of mangas.
