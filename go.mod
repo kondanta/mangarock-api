@@ -1,4 +1,4 @@
-module mangarock
+module github.com/kondanta/mangarock-api
 
 go 1.12
 
